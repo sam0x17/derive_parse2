@@ -1,0 +1,16 @@
+[package]
+name = "derive_parse2_macros"
+version = "0.1.0"
+edition = "2021"
+authors = ["sam0x17"]
+license = "MIT"
+description = "support macros for the derive_parse2 crate"
+homepage = "https://crates.io/crates/derive_parse2"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "2"
+proc-macro2 = "1"
+quote = "1"

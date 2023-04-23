@@ -1,5 +1,8 @@
+[workspace]
+members = ["macros"]
+
 [package]
-name = "derive-parse"
+name = "derive_parse2"
 version = "0.1.0"
 edition = "2021"
 authors = ["sam0x17"]
@@ -7,7 +10,8 @@ license = "MIT"
 keywords = ["derive-syn-parse", "macros", "proc-macros", "syn", "parsing"]
 categories = ["development-tools", "development-tools::procedural-macro-helpers", "rust-patterns"]
 homepage = "https://sam0x17.dev"
-repository = "https://github.com/sam0x17/derive-parse"
+repository = "https://github.com/sam0x17/derive-parse2"
 description = "A derive macro that derives syn/proc_macro2-compatible Parse implementations for structs and enums. Intended as the spiritual successor to derive-syn-parse."
 
 [dependencies]
+derive_parse2_macros = { path = "macros" }
