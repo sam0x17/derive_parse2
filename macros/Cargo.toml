@@ -11,6 +11,6 @@ homepage = "https://crates.io/crates/derive_parse2"
 proc-macro = true
 
 [dependencies]
-syn = "2"
+syn = { version = "2", features = ["full"] }
 proc-macro2 = "1"
 quote = "1"
