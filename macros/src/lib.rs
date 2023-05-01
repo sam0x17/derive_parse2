@@ -1,12 +1,13 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{
     bracketed, parenthesized,
     parse::Nothing,
     parse2,
+    spanned::Spanned,
     token::{Bracket, Paren},
-    Error, Expr, Ident, ItemEnum, ItemStruct, Result, Token,
+    Error, Expr, Ident, ItemEnum, ItemStruct, Result, Token, Type, TypePath,
 };
 
 fn _derive_parse(tokens: impl Into<TokenStream2>) -> Result<TokenStream2> {
@@ -104,7 +105,40 @@ impl syn::parse::Parse for DeriveParseAttr {
     }
 }
 
-fn derive_parse_struct(_item_struct: ItemStruct) -> Result<TokenStream2> {
+fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
+    let mut assertions: Vec<TokenStream2> = Vec::new();
+    let private = quote!(::derive_parse2::__private);
+    let syn_ = quote!(#private::syn);
+    let sa_ = quote!(#private::static_assertions);
+    for field in item_struct.fields {
+        if field.attrs.len() > 1 {
+            return Err(Error::new(
+                field.attrs[1].span(),
+                "Only one attribute is supported per struct item.",
+            ));
+        }
+        let Type::Path(TypePath { path, qself: _ }) = field.ty else {
+            return Err(Error::new(field.ty.span(), "Only type paths are supported in this context."))
+        };
+        assertions.push(quote! {
+            #sa_::assert_impl_all!(#path: #syn_::parse::Parse);
+        });
+
+        // <- process field here
+        let Some(attr) = field.attrs.first() else { continue };
+        let attr = parse2::<DeriveParseAttr>(attr.to_token_stream())?;
+        match attr {
+            DeriveParseAttr::Brace => todo!(),
+            DeriveParseAttr::Bracket => todo!(),
+            DeriveParseAttr::Paren => todo!(),
+            DeriveParseAttr::Inside(_) => todo!(),
+            DeriveParseAttr::Call(_) => todo!(),
+            DeriveParseAttr::ParseIf(_) => todo!(),
+            DeriveParseAttr::Prefix(_) => todo!(),
+            DeriveParseAttr::Postfix(_) => todo!(),
+        }
+    }
+
     Ok(quote!())
 }
 
