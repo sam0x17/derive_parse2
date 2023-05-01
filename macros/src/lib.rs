@@ -164,8 +164,8 @@ fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
                     assertions.push(
                         quote!(#sa_::assert_impl_all!(#inner_arg: #syn_::parse::Parse, #quote_::ToTokens);),
                     );
-                    let inner_arg_ident: Ident = parse_quote!(#inner_arg);
-                    (true, parse_quote!(#inner_arg), Some(inner_arg_ident))
+                    let inner_arg_ident = parse2::<Ident>(inner_arg.to_token_stream()).ok();
+                    (true, parse_quote!(#inner_arg), inner_arg_ident)
                 } else {
                     assertions.push(
                         quote!(#sa_::assert_impl_all!(#path: #syn_::parse::Parse, #quote_::ToTokens);),
@@ -212,10 +212,10 @@ fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
                 match field_is_optional {
                     false => derive_lines.push(quote!(#field_ident: input.parse::<#field_type>()?)),
                     true => derive_lines.push(quote! {
-                        #field_ident: match input.parse::<#field_type>()? {
+                        #field_ident: match input.parse::<#field_type>() {
                             Ok(res) => Some(res),
                             Err(_) => None,
-                        },
+                        }
                     }),
                 }
             }
@@ -227,7 +227,7 @@ fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
     }
     let struct_ident = item_struct.ident;
     let struct_generics = item_struct.generics;
-    Ok(quote! {
+    let output = quote! {
         impl #struct_generics #syn_::parse::Parse for #struct_ident #struct_generics {
             fn parse(input: #syn_::parse::ParseStream) -> #syn_::Result<Self> {
                 Ok(#struct_ident {
@@ -235,7 +235,9 @@ fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
                 })
             }
         }
-    })
+    };
+    //panic!("{}", output.to_string());
+    Ok(output)
 }
 
 fn derive_parse_enum(_item_enum: ItemEnum) -> Result<TokenStream2> {
