@@ -149,3 +149,16 @@ fn derive_parse_attr_postfix_invalid() {
     let tokens = quote!(#[postfix()]);
     assert!(parse2::<DeriveParseAttr>(tokens).is_err());
 }
+
+#[test]
+fn test_derive_parse_struct_basic_types() {
+    let tokens = quote! {
+        struct MyTypeUse {
+            _use: Token![use],
+            typ: syn::Type,
+            _as: syn::Token![as],
+            alias: Ident,
+        }
+    };
+    derive_parse_struct(parse_quote!(#tokens)).unwrap();
+}

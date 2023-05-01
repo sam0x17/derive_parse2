@@ -16,4 +16,5 @@ description = "A derive macro that derives syn/proc_macro2-compatible Parse impl
 [dependencies]
 derive_parse2_macros = { path = "macros" }
 syn = { version = "2", features = ["full"] }
+quote = "1"
 static_assertions = "1.1.0"
