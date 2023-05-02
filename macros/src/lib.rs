@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{quote, ToTokens};
+use quote::{format_ident, quote, ToTokens};
 use syn::{
     bracketed, parenthesized,
     parse::Nothing,
@@ -127,6 +127,10 @@ fn _derive_parse(tokens: impl Into<TokenStream2>) -> Result<TokenStream2> {
     derive_parse_enum(item_enum)
 }
 
+fn get_content_var(n: usize) -> Ident {
+    format_ident!("content_{}", n)
+}
+
 fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
     let mut assertions: Vec<TokenStream2> = Vec::new();
     let krate = quote!(::derive_parse2);
@@ -135,6 +139,11 @@ fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
     let sa_ = quote!(#private::static_assertions);
     let quote_ = quote!(#private::quote);
     let mut derive_lines: Vec<TokenStream2> = Vec::new();
+    let mut inside_stack: Vec<(Ident, Ident)> = Vec::new();
+    let mut content_vars: Vec<Ident> = Vec::new();
+    let mut content_var: Option<Ident> = None;
+    let mut inside_of: Option<Ident> = None;
+
     for field in item_struct.fields {
         if field.attrs.len() > 1 {
             return Err(Error::new(
@@ -209,20 +218,60 @@ fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
         match attr {
             None => {
                 // parsing for a "normal" field
-                match field_is_optional {
-                    false => derive_lines.push(quote!(#field_ident: input.parse::<#field_type>()?)),
-                    true => derive_lines.push(quote! {
+                if field_is_optional {
+                    derive_lines.push(quote! {
                         #field_ident: match input.parse::<#field_type>() {
                             Ok(res) => Some(res),
                             Err(_) => None,
                         }
-                    }),
+                    });
+                } else {
+                    derive_lines.push(quote!(#field_ident: input.parse::<#field_type>()?));
                 }
             }
-            Some(_attr) => {
-                // parsing for a field with an attr or a brace/bracket/paren auto
-                unimplemented!()
+            Some(DeriveParseAttr::Brace)
+            | Some(DeriveParseAttr::Bracket)
+            | Some(DeriveParseAttr::Paren) => {
+                let mut prev_content_var: Ident = parse_quote!(input);
+                if let (Some(content_var), Some(inside_of)) = (content_var, inside_of) {
+                    // if we are already inside of something, push it onto the stack so we can
+                    // return to it once we are done with this token tree
+                    inside_stack.push((content_var.clone(), inside_of));
+                    prev_content_var = content_var;
+                }
+                content_var = Some(get_content_var(content_vars.len()));
+                inside_of = Some(field_ident.clone());
+                content_vars.push(content_var.clone().unwrap());
+
+                // get the syn parse helper for this token tree
+                let parse_helper = match attr.unwrap() {
+                    DeriveParseAttr::Brace => quote!(braced!),
+                    DeriveParseAttr::Bracket => quote!(bracketed!),
+                    DeriveParseAttr::Paren => quote!(parenthesized!),
+                    _ => unreachable!(),
+                };
+
+                if field_is_optional {
+                    unimplemented!()
+                } else {
+                    derive_lines.push(quote! {
+                        #field_ident: #syn_::#parse_helper(#content_var in #prev_content_var),
+                    });
+                }
             }
+            Some(DeriveParseAttr::Inside(inside_of_ident)) => {
+                while Some(inside_of_ident.clone()) != inside_of {
+                    // this doesn't match the current inside of, we should pop
+                    (content_var, inside_of) = match inside_stack.pop() {
+                        Some((content, inside)) => (Some(content), Some(inside)),
+                        None => return Err(Error::new(
+                            inside_of_ident.span(),
+                            "The specified token tree doesn't exist or has already been parsed fully"
+                        )),
+                    };
+                }
+            }
+            _ => unimplemented!(),
         }
     }
     let struct_ident = item_struct.ident;
@@ -230,8 +279,11 @@ fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
     let output = quote! {
         impl #struct_generics #syn_::parse::Parse for #struct_ident #struct_generics {
             fn parse(input: #syn_::parse::ParseStream) -> #syn_::Result<Self> {
+                #(let #content_vars;)
+                *
                 Ok(#struct_ident {
-                    #(#derive_lines),*
+                    #(#derive_lines),
+                    *
                 })
             }
         }
