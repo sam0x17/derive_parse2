@@ -144,7 +144,7 @@ fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
     let mut content_var: Option<Ident> = None;
     let mut inside_of: Option<Ident> = None;
 
-    for field in item_struct.fields {
+    for mut field in item_struct.fields {
         if field.attrs.len() > 1 {
             return Err(Error::new(
                 field.attrs[1].span(),
@@ -215,19 +215,29 @@ fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
             return Err(Error::new(field.span(), "All fields in this struct must have a defined ident (field name)"));
         };
 
+        let mut process_field = |cvar: Option<Ident>| {
+            let parse_stream = match cvar {
+                Some(ident) => ident,
+                None => parse_quote!(input),
+            };
+            if field_is_optional {
+                derive_lines.push(quote! {
+                    #field_ident: match #parse_stream.parse::<#field_type>() {
+                        Ok(res) => Some(res),
+                        Err(_) => None,
+                    }
+                });
+            } else {
+                derive_lines.push(quote!(#field_ident: #parse_stream.parse::<#field_type>()?));
+            }
+        };
+
+        field.attrs.clear();
+
         match attr {
             None => {
                 // parsing for a "normal" field
-                if field_is_optional {
-                    derive_lines.push(quote! {
-                        #field_ident: match input.parse::<#field_type>() {
-                            Ok(res) => Some(res),
-                            Err(_) => None,
-                        }
-                    });
-                } else {
-                    derive_lines.push(quote!(#field_ident: input.parse::<#field_type>()?));
-                }
+                process_field(None);
             }
             Some(DeriveParseAttr::Brace)
             | Some(DeriveParseAttr::Bracket)
@@ -252,10 +262,11 @@ fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
                 };
 
                 if field_is_optional {
+                    // note: only will work with peek
                     unimplemented!()
                 } else {
                     derive_lines.push(quote! {
-                        #field_ident: #syn_::#parse_helper(#content_var in #prev_content_var),
+                        #field_ident: #syn_::#parse_helper(#content_var in #prev_content_var)
                     });
                 }
             }
@@ -270,6 +281,7 @@ fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
                         )),
                     };
                 }
+                process_field(content_var.clone());
             }
             _ => unimplemented!(),
         }
@@ -288,7 +300,7 @@ fn derive_parse_struct(item_struct: ItemStruct) -> Result<TokenStream2> {
             }
         }
     };
-    //panic!("{}", output.to_string());
+    // println!("{}", output.to_string());
     Ok(output)
 }
 
@@ -296,7 +308,22 @@ fn derive_parse_enum(_item_enum: ItemEnum) -> Result<TokenStream2> {
     Ok(quote!())
 }
 
-#[proc_macro_derive(Parse)]
+#[proc_macro_derive(
+    Parse,
+    attributes(
+        paren,
+        bracket,
+        brace,
+        inside,
+        call,
+        parse_terminated,
+        peek,
+        peek_with,
+        parse_if,
+        prefix,
+        postfix,
+    )
+)]
 pub fn derive_parse(tokens: TokenStream) -> TokenStream {
     match _derive_parse(tokens) {
         Ok(tokens) => tokens.into(),
