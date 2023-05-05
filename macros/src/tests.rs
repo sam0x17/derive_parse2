@@ -162,3 +162,83 @@ fn test_derive_parse_struct_basic_types() {
     };
     derive_parse_struct(parse_quote!(#tokens)).unwrap();
 }
+
+#[test]
+fn test_parse_field_def_valid() {
+    parse2::<FieldDef>(quote!(some_ident: bool)).unwrap();
+    parse2::<FieldDef>(quote!(ident: Something,)).unwrap();
+    parse2::<FieldDef>(quote!(my_field: some::typ::Path)).unwrap();
+    parse2::<FieldDef>(quote! {
+        #[paren]
+        _paren: syn::token::Paren,
+    })
+    .unwrap();
+}
+
+#[test]
+fn test_parse_field_def_invalid() {
+    assert!(parse2::<FieldDef>(quote!(some_ident bool)).is_err());
+    assert!(parse2::<FieldDef>(quote!(Something<Thing>: bool)).is_err());
+    assert!(parse2::<FieldDef>(quote!(some::thing: bool)).is_err());
+    assert!(parse2::<FieldDef>(quote! {
+        #[prefix]
+        _paren: syn::token::Paren,
+    })
+    .is_err());
+    assert!(parse2::<FieldDef>(quote! {
+        #[derive(Something)]
+        _paren: syn::token::Paren,
+    })
+    .is_err());
+}
+
+#[test]
+fn test_struct_def_parsing_valid() {
+    parse2::<StructDef>(quote! {
+        #[some_attribute]
+        pub struct MyStruct {
+            some_field: syn::token::Comma,
+            some_other_field: Token![;],
+            yet_another_field: Option<SomeType>,
+        }
+    })
+    .unwrap();
+    parse2::<StructDef>(quote! {
+        #[some_attribute]
+        #[another(attribute)]
+        struct MyStruct {
+            some_field: syn::token::Comma
+        }
+    })
+    .unwrap();
+    parse2::<StructDef>(quote! {
+        struct MyStruct {
+            some_field: syn::token::Comma
+        };
+    })
+    .unwrap();
+}
+
+fn test_struct_def_parsing_invalid() {
+    assert!(parse2::<StructDef>(quote! {
+        enum MyStruct {
+            some_field: syn::token::Comma
+        }
+    })
+    .is_err());
+    assert!(parse2::<StructDef>(quote! {
+        struct MyStruct {
+            some_field: syn::token::Comma
+            another_field: Something
+        }
+    })
+    .is_err());
+    assert!(parse2::<StructDef>(quote! {
+        struct MyStruct {
+            some_field: syn::token::Comma,
+            #[some_other_attr] // TODO: allow cfg() though...
+            another_field: Something,
+        }
+    })
+    .is_err());
+}

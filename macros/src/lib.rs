@@ -2,12 +2,13 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote, ToTokens};
 use syn::{
-    bracketed, parenthesized,
+    braced, bracketed, parenthesized,
     parse::Nothing,
     parse2, parse_quote,
     spanned::Spanned,
-    token::{Bracket, Paren},
-    Error, Expr, Ident, ItemEnum, ItemStruct, PathArguments, Result, Token, Type, TypePath,
+    token::{self, Bracket, Paren},
+    Attribute, Error, Expr, Generics, Ident, ItemEnum, ItemStruct, PathArguments, Result, Token,
+    Type, TypePath, Visibility,
 };
 
 mod keywords {
@@ -94,6 +95,72 @@ impl syn::parse::Parse for DeriveParseAttr {
                 `inside`, `call`, `parse_if`, `prefix`, `postfix`.",
             ));
         }
+    }
+}
+
+struct FieldDef {
+    attrs: Vec<DeriveParseAttr>,
+    name: Ident,
+    _colon: Token![:],
+    typ: Type,
+    _comma: Option<Token![,]>,
+}
+
+impl syn::parse::Parse for FieldDef {
+    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
+        let mut attrs: Vec<DeriveParseAttr> = Vec::new();
+        loop {
+            if !input.peek(Token![#]) {
+                break;
+            }
+            attrs.push(input.parse()?);
+        }
+        Ok(FieldDef {
+            attrs,
+            name: input.parse()?,
+            _colon: input.parse()?,
+            typ: input.parse()?,
+            _comma: match input.peek(Token![,]) {
+                true => Some(input.parse()?),
+                false => None,
+            },
+        })
+    }
+}
+
+struct StructDef {
+    attrs: Vec<Attribute>,
+    vis: Visibility,
+    _struct: Token![struct],
+    ident: Ident,
+    generics: Generics,
+    _brace: token::Brace,
+    fields: Vec<FieldDef>,
+    _semi: Option<Token![;]>,
+}
+
+impl syn::parse::Parse for StructDef {
+    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
+        let content;
+        Ok(StructDef {
+            attrs: input.call(Attribute::parse_outer)?,
+            vis: input.parse()?,
+            _struct: input.parse()?,
+            ident: input.parse()?,
+            generics: input.parse()?,
+            _brace: braced!(content in input),
+            fields: {
+                let mut fields: Vec<FieldDef> = Vec::new();
+                while !content.is_empty() {
+                    fields.push(content.parse()?);
+                }
+                fields
+            },
+            _semi: match input.peek(Token![;]) {
+                true => Some(input.parse()?),
+                false => None,
+            },
+        })
     }
 }
 
