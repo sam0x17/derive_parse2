@@ -35,27 +35,6 @@ enum DeriveParseAttr {
     Postfix(Expr),
 }
 
-// impl PartialEq for DeriveParseAttr {
-//     fn eq(&self, other: &Self) -> bool {
-//         match (self, other) {
-//             (Self::Inside(l0), Self::Inside(r0)) => l0.to_string() == r0.to_string(),
-//             (Self::Call(l0), Self::Call(r0)) => {
-//                 l0.to_token_stream().to_string() == r0.to_token_stream().to_string()
-//             }
-//             (Self::ParseIf(l0), Self::ParseIf(r0)) => {
-//                 l0.to_token_stream().to_string() == r0.to_token_stream().to_string()
-//             }
-//             (Self::Prefix(l0), Self::Prefix(r0)) => {
-//                 l0.to_token_stream().to_string() == r0.to_token_stream().to_string()
-//             }
-//             (Self::Postfix(l0), Self::Postfix(r0)) => {
-//                 l0.to_token_stream().to_string() == r0.to_token_stream().to_string()
-//             }
-//             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
-//         }
-//     }
-// }
-
 impl syn::parse::Parse for DeriveParseAttr {
     fn parse(input: syn::parse::ParseStream) -> Result<Self> {
         let content;
