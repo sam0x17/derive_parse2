@@ -71,6 +71,8 @@ pub mod keywords {
 
     custom_keyword!(IdentsList);
     custom_keyword!(yeah);
+    custom_keyword!(MultiList);
+    custom_keyword!(inside);
 }
 
 #[derive(Parse)]
@@ -110,3 +112,25 @@ fn generated_struct_parsing_three_idents_list_invalid() {
     assert!(parse2::<ThreeIdentsList>(quote!(IdentsList(one, two, three, four)::yeah)).is_err());
     assert!(parse2::<ThreeIdentsList>(quote!(IdentsList(one, two, three)yeah)).is_err());
 }
+
+// #[derive(Parse)]
+// struct MultiLevelNesting {
+//     _multi: keywords::MultiList,
+//     _colons: Token![::],
+//     #[brace]
+//     _brace: token::Brace,
+//     #[inside(_brace)]
+//     _inside1: keywords::inside,
+//     #[inside(_brace)]
+//     #[bracket]
+//     _bracket: token::Bracket,
+//     #[inside(_bracket)]
+//     _inside2: keywords::inside,
+//     #[inside(_bracket)]
+//     #[paren]
+//     _paren: token::Paren,
+//     #[inside(_paren)]
+//     _inside3: keywords::inside,
+//     #[inside(_paren)]
+//     content: Option<Ident>,
+// }

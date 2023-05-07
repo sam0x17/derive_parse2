@@ -5,6 +5,7 @@ use syn::{
     braced, bracketed, parenthesized,
     parse::Nothing,
     parse2, parse_quote,
+    punctuated::Punctuated,
     spanned::Spanned,
     token::{self, Bracket, Paren},
     Attribute, Error, Expr, Generics, Ident, ItemEnum, ItemStruct, PathArguments, Result, Token,
@@ -98,32 +99,106 @@ impl syn::parse::Parse for DeriveParseAttr {
     }
 }
 
+impl quote::ToTokens for DeriveParseAttr {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        match self {
+            DeriveParseAttr::Brace => tokens.extend(quote!(#[brace])),
+            DeriveParseAttr::Bracket => tokens.extend(quote!(#[bracket])),
+            DeriveParseAttr::Paren => tokens.extend(quote!(#[paren])),
+            DeriveParseAttr::Inside(content) => tokens.extend(quote!(#[inside(#content)])),
+            DeriveParseAttr::Call(content) => tokens.extend(quote!(#[call(#content)])),
+            DeriveParseAttr::ParseIf(content) => tokens.extend(quote!(#[parse_if(#content)])),
+            DeriveParseAttr::Prefix(content) => tokens.extend(quote!(#[prefix(#content)])),
+            DeriveParseAttr::Postfix(content) => tokens.extend(quote!(#[postfix(#content)])),
+        }
+    }
+}
+
 struct FieldDef {
-    attrs: Vec<DeriveParseAttr>,
+    attrs: Vec<Attribute>,
+    dp_attrs: Vec<DeriveParseAttr>,
     name: Ident,
     _colon: Token![:],
     typ: Type,
-    _comma: Option<Token![,]>,
 }
 
 impl syn::parse::Parse for FieldDef {
     fn parse(input: syn::parse::ParseStream) -> Result<Self> {
-        let mut attrs: Vec<DeriveParseAttr> = Vec::new();
-        loop {
-            if !input.peek(Token![#]) {
-                break;
+        let mut attrs: Vec<Attribute> = input.call(Attribute::parse_outer)?;
+        let mut dp_attrs: Vec<DeriveParseAttr> = Vec::new();
+        attrs = attrs
+            .into_iter()
+            .filter(|attr| {
+                if let Ok(dp_attr) = parse2::<DeriveParseAttr>(attr.to_token_stream()) {
+                    dp_attrs.push(dp_attr);
+                    return false;
+                }
+                true
+            })
+            .collect();
+        let (mut has_tt, mut has_inside, mut has_call, mut has_parse_if, mut has_fix) =
+            (false, false, false, false, false);
+        for dp_attr in &dp_attrs {
+            match dp_attr {
+                DeriveParseAttr::Brace | DeriveParseAttr::Bracket | DeriveParseAttr::Paren => {
+                    if has_tt {
+                        return Err(Error::new(
+                            dp_attr.span(),
+                            "Only one of #[paren]/#[brace]/#[bracket] can be applied to a single field"
+                        ));
+                    }
+                    has_tt = true;
+                }
+                DeriveParseAttr::Inside(_) => {
+                    if has_inside {
+                        return Err(Error::new(
+                            dp_attr.span(),
+                            "Only one of #[inside(..)] can be applied to a single field",
+                        ));
+                    }
+                    has_inside = true;
+                }
+                DeriveParseAttr::Call(_) => {
+                    if has_call {
+                        return Err(Error::new(
+                            dp_attr.span(),
+                            "Only one of #[call(..)] can be applied to a single field",
+                        ));
+                    }
+                    has_call = true;
+                }
+                DeriveParseAttr::ParseIf(_) => {
+                    if has_parse_if {
+                        return Err(Error::new(
+                            dp_attr.span(),
+                            "Only one of #[parse_if(..)] can be applied to a single field",
+                        ));
+                    }
+                    has_parse_if = true;
+                }
+                DeriveParseAttr::Prefix(_) | DeriveParseAttr::Postfix(_) => {
+                    if has_fix {
+                        return Err(Error::new(
+                            dp_attr.span(),
+                            "Only one of #[prefix(..)]/#[postfix(..)] can be applied to a single field"
+                        ));
+                    }
+                    has_fix = true;
+                }
             }
-            attrs.push(input.parse()?);
+        }
+        if dp_attrs.len() > 2 {
+            return Err(Error::new(
+                dp_attrs[2].span(),
+                "At most two derive_parse2 attribute helpers can be applied to a single struct field"
+            ));
         }
         Ok(FieldDef {
             attrs,
+            dp_attrs,
             name: input.parse()?,
             _colon: input.parse()?,
             typ: input.parse()?,
-            _comma: match input.peek(Token![,]) {
-                true => Some(input.parse()?),
-                false => None,
-            },
         })
     }
 }
@@ -135,7 +210,7 @@ struct StructDef {
     ident: Ident,
     generics: Generics,
     _brace: token::Brace,
-    fields: Vec<FieldDef>,
+    fields: Punctuated<FieldDef, Token![,]>,
     _semi: Option<Token![;]>,
 }
 
@@ -149,13 +224,7 @@ impl syn::parse::Parse for StructDef {
             ident: input.parse()?,
             generics: input.parse()?,
             _brace: braced!(content in input),
-            fields: {
-                let mut fields: Vec<FieldDef> = Vec::new();
-                while !content.is_empty() {
-                    fields.push(content.parse()?);
-                }
-                fields
-            },
+            fields: content.parse_terminated(FieldDef::parse, Token![,])?,
             _semi: match input.peek(Token![;]) {
                 true => Some(input.parse()?),
                 false => None,

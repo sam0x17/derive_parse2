@@ -166,11 +166,11 @@ fn test_derive_parse_struct_basic_types() {
 #[test]
 fn test_parse_field_def_valid() {
     parse2::<FieldDef>(quote!(some_ident: bool)).unwrap();
-    parse2::<FieldDef>(quote!(ident: Something,)).unwrap();
+    parse2::<FieldDef>(quote!(ident: Something)).unwrap();
     parse2::<FieldDef>(quote!(my_field: some::typ::Path)).unwrap();
     parse2::<FieldDef>(quote! {
         #[paren]
-        _paren: syn::token::Paren,
+        _paren: syn::token::Paren
     })
     .unwrap();
 }
@@ -180,16 +180,6 @@ fn test_parse_field_def_invalid() {
     assert!(parse2::<FieldDef>(quote!(some_ident bool)).is_err());
     assert!(parse2::<FieldDef>(quote!(Something<Thing>: bool)).is_err());
     assert!(parse2::<FieldDef>(quote!(some::thing: bool)).is_err());
-    assert!(parse2::<FieldDef>(quote! {
-        #[prefix]
-        _paren: syn::token::Paren,
-    })
-    .is_err());
-    assert!(parse2::<FieldDef>(quote! {
-        #[derive(Something)]
-        _paren: syn::token::Paren,
-    })
-    .is_err());
 }
 
 #[test]
@@ -217,8 +207,18 @@ fn test_struct_def_parsing_valid() {
         };
     })
     .unwrap();
+    parse2::<StructDef>(quote! {
+        struct MyStruct {
+            some_field: syn::token::Comma,
+            #[paren]
+            #[inside(something)]
+            another_field: Something
+        }
+    })
+    .unwrap();
 }
 
+#[test]
 fn test_struct_def_parsing_invalid() {
     assert!(parse2::<StructDef>(quote! {
         enum MyStruct {
@@ -236,8 +236,28 @@ fn test_struct_def_parsing_invalid() {
     assert!(parse2::<StructDef>(quote! {
         struct MyStruct {
             some_field: syn::token::Comma,
-            #[some_other_attr] // TODO: allow cfg() though...
-            another_field: Something,
+            #[paren]
+            #[bracket]
+            #[inside(something)]
+            another_field: Something
+        }
+    })
+    .is_err());
+    assert!(parse2::<StructDef>(quote! {
+        struct MyStruct {
+            some_field: syn::token::Comma,
+            #[paren]
+            #[bracket]
+            another_field: Something
+        }
+    })
+    .is_err());
+    assert!(parse2::<StructDef>(quote! {
+        struct MyStruct {
+            some_field: syn::token::Comma,
+            #[paren]
+            #[paren]
+            another_field: Something
         }
     })
     .is_err());
