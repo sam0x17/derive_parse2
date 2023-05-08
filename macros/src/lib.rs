@@ -1,5 +1,7 @@
+use std::collections::HashSet;
+
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote, ToTokens};
 use syn::{
     braced, bracketed, parenthesized,
@@ -139,24 +141,24 @@ struct FieldDef {
     typ: Type,
     optional: bool,
     parse_type: Type,
-    tt: Option<TokenTreeType>,
-    inside: Option<Ident>,
-    call: Option<Expr>,
-    parse_if: Option<Expr>,
-    prefix: Option<Expr>,
-    postfix: Option<Expr>,
+    tt: Option<(TokenTreeType, Span, usize)>,
+    inside: Option<(Ident, Span, usize)>,
+    call: Option<(Expr, Span, usize)>,
+    parse_if: Option<(Expr, Span, usize)>,
+    prefix: Option<(Expr, Span, usize)>,
+    postfix: Option<(Expr, Span, usize)>,
 }
 
 impl syn::parse::Parse for FieldDef {
     fn parse(input: syn::parse::ParseStream) -> Result<Self> {
         let mut attrs: Vec<Attribute> = input.call(Attribute::parse_outer)?;
         let mut dp_attrs: Vec<DeriveParseAttr> = Vec::new();
-        let mut attr_tt: Option<&DeriveParseAttr> = None;
-        let mut inside: Option<Ident> = None;
-        let mut call: Option<Expr> = None;
-        let mut parse_if: Option<Expr> = None;
-        let mut prefix: Option<Expr> = None;
-        let mut postfix: Option<Expr> = None;
+        let mut attr_tt: Option<(&DeriveParseAttr, usize)> = None;
+        let mut inside: Option<(Ident, Span, usize)> = None;
+        let mut call: Option<(Expr, Span, usize)> = None;
+        let mut parse_if: Option<(Expr, Span, usize)> = None;
+        let mut prefix: Option<(Expr, Span, usize)> = None;
+        let mut postfix: Option<(Expr, Span, usize)> = None;
         attrs = attrs
             .into_iter()
             .filter(|attr| {
@@ -169,6 +171,7 @@ impl syn::parse::Parse for FieldDef {
             .collect();
         let (mut has_tt, mut has_inside, mut has_call, mut has_parse_if, mut has_fix) =
             (false, false, false, false, false);
+        let mut i = 0;
         for dp_attr in &dp_attrs {
             match dp_attr {
                 DeriveParseAttr::Brace | DeriveParseAttr::Bracket | DeriveParseAttr::Paren => {
@@ -178,7 +181,7 @@ impl syn::parse::Parse for FieldDef {
                             "Only one of #[paren]/#[brace]/#[bracket] can be applied to a single field"
                         ));
                     }
-                    attr_tt = Some(dp_attr);
+                    attr_tt = Some((dp_attr, i));
                     has_tt = true;
                 }
                 DeriveParseAttr::Inside(ident) => {
@@ -189,7 +192,7 @@ impl syn::parse::Parse for FieldDef {
                         ));
                     }
                     has_inside = true;
-                    inside = Some(ident.clone());
+                    inside = Some((ident.clone(), dp_attr.span(), i));
                 }
                 DeriveParseAttr::Call(expr) => {
                     if has_call {
@@ -199,7 +202,7 @@ impl syn::parse::Parse for FieldDef {
                         ));
                     }
                     has_call = true;
-                    call = Some(expr.clone());
+                    call = Some((expr.clone(), dp_attr.span(), i));
                 }
                 DeriveParseAttr::ParseIf(expr) => {
                     if has_parse_if {
@@ -209,7 +212,7 @@ impl syn::parse::Parse for FieldDef {
                         ));
                     }
                     has_parse_if = true;
-                    parse_if = Some(expr.clone());
+                    parse_if = Some((expr.clone(), dp_attr.span(), i));
                 }
                 DeriveParseAttr::Prefix(_) | DeriveParseAttr::Postfix(_) => {
                     if has_fix {
@@ -220,17 +223,22 @@ impl syn::parse::Parse for FieldDef {
                     }
                     has_fix = true;
                     match dp_attr {
-                        DeriveParseAttr::Prefix(expr) => prefix = Some(expr.clone()),
-                        DeriveParseAttr::Postfix(expr) => postfix = Some(expr.clone()),
+                        DeriveParseAttr::Prefix(expr) => {
+                            prefix = Some((expr.clone(), dp_attr.span(), i))
+                        }
+                        DeriveParseAttr::Postfix(expr) => {
+                            postfix = Some((expr.clone(), dp_attr.span(), i))
+                        }
                         _ => unreachable!(),
                     }
                 }
             }
+            i += 1;
         }
-        if dp_attrs.len() > 2 {
+        if dp_attrs.len() > 3 {
             return Err(Error::new(
-                dp_attrs[2].span(),
-                "At most two derive_parse2 attribute helpers can be applied to a single struct field"
+                dp_attrs[3].span(),
+                "At most three derive_parse2 attribute helpers can be applied to a single struct field"
             ));
         }
 
@@ -282,7 +290,7 @@ impl syn::parse::Parse for FieldDef {
 
         // shortcut to omit `#[brace]` / `#[bracket]` / `#[paren]` if using types that follow
         // syn's naming conventions
-        if dp_attrs.len() < 2 && !has_tt {
+        if dp_attrs.len() < 3 && !has_tt {
             if let Some(ident) = parse_type_trailing_ident {
                 let dp_attr = match ident.to_string().as_str() {
                     "Brace" => Some(DeriveParseAttr::Brace),
@@ -292,13 +300,13 @@ impl syn::parse::Parse for FieldDef {
                 };
                 if let Some(dp_attr) = dp_attr {
                     dp_attrs.push(dp_attr.clone());
-                    attr_tt = Some(&dp_attrs.iter().last().unwrap());
+                    attr_tt = Some((&dp_attrs.iter().last().unwrap(), dp_attrs.len() - 1));
                 }
             }
         }
 
         let tt = match attr_tt {
-            Some(attr) => attr.tt_type(),
+            Some((attr, index)) => Some((attr.tt_type().unwrap(), attr.span(), index)),
             None => None,
         };
 
@@ -318,6 +326,34 @@ impl syn::parse::Parse for FieldDef {
             postfix,
         })
     }
+}
+
+fn derive_parse_struct(struct_def: StructDef) -> Result<TokenStream2> {
+    let krate = quote!(::derive_parse2);
+    let private = quote!(#krate::__private);
+    let syn_ = quote!(#private::syn);
+    let sa_ = quote!(#private::static_assertions);
+    let quote_ = quote!(#private::quote);
+    let mut derive_lines: Vec<TokenStream2> = Vec::new();
+    let mut ps_stack: Vec<Ident> = Vec::new();
+    let mut ps_var: Ident = parse_quote!(input);
+    for field in struct_def.fields {
+        // processing for #[inside(..)]
+        if let Some((inside, _, _)) = field.inside {
+            // use up all levels until we match the requested one
+            while inside != ps_var {
+                ps_var = match ps_stack.pop() {
+                    Some(var) => var,
+                    None => return Err(Error::new(
+                        inside.span(),
+                        "The specified field name '{}' could not be found in the preceeding fields",
+                    )),
+                }
+            }
+        }
+        if let Some((prefix, prefix_span, prefix_index)) = field.prefix {}
+    }
+    Ok(quote!())
 }
 
 struct StructDef {
@@ -361,16 +397,6 @@ fn _derive_parse(tokens: impl Into<TokenStream2>) -> Result<TokenStream2> {
 
 fn get_content_var(n: usize) -> Ident {
     format_ident!("content_{}", n)
-}
-
-fn derive_parse_struct(struct_def: StructDef) -> Result<TokenStream2> {
-    let krate = quote!(::derive_parse2);
-    let private = quote!(#krate::__private);
-    let syn_ = quote!(#private::syn);
-    let sa_ = quote!(#private::static_assertions);
-    let quote_ = quote!(#private::quote);
-    let mut derive_lines: Vec<TokenStream2> = Vec::new();
-    Ok(quote!())
 }
 
 fn derive_parse_struct_old(item_struct: ItemStruct) -> Result<TokenStream2> {
